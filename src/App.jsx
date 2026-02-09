@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Plus, Trash2, Share2, Circle, MousePointer2, ArrowRight, Minus, Download, Crop, X, Check, Play, RotateCcw } from 'lucide-react';
+import { Plus, Trash2, Share2, Circle, MousePointer2, ArrowRight, Minus, Download, Crop, X, Check, Play, RotateCcw, Code } from 'lucide-react';
 
 const App = () => {
   // State for Graph Data
@@ -45,6 +45,46 @@ const App = () => {
   const [currentStep, setCurrentStep] = useState(-1);
   const [visitedNodes, setVisitedNodes] = useState(new Set());
   const [visitedEdges, setVisitedEdges] = useState(new Set());
+
+  // Custom Algorithm State
+  const [showCodeEditor, setShowCodeEditor] = useState(false);
+  const [customCode, setCustomCode] = useState(`// Available variables: 
+// nodes: array of {id, label, x, y}
+// edges: array of {id, source, target, type}
+// startNodeId: id of the selected start node
+// 
+// Helper functions:
+// visit(id, type) - type is 'node' or 'edge'. Records visit for animation.
+// getNeighbors(nodeId) - returns array of { node, edgeId }
+// log(message) - prints to console
+
+function traverse(startNodeId) {
+  if (!startNodeId) {
+    log("Please select a start node");
+    return;
+  }
+  
+  const visited = new Set();
+  const queue = [startNodeId];
+  visited.add(startNodeId);
+  visit(startNodeId, 'node');
+
+  while (queue.length > 0) {
+    const curr = queue.shift();
+    const neighbors = getNeighbors(curr);
+
+    for (const { node, edgeId } of neighbors) {
+      if (!visited.has(node)) {
+        visited.add(node);
+        visit(edgeId, 'edge');
+        visit(node, 'node');
+        queue.push(node);
+      }
+    }
+  }
+}
+
+traverse(startNodeId);`);
 
   // Dragging State
   const [draggingNodeId, setDraggingNodeId] = useState(null);
@@ -230,6 +270,55 @@ const App = () => {
 
     dfs(traversalStartNode);
     startAnimation(path);
+  };
+
+  const runCustomAlgorithm = () => {
+    try {
+      if (!traversalStartNode) {
+        alert("시작 노드를 선택해주세요.");
+        return;
+      }
+
+      const path = [];
+      const visit = (id, type) => {
+        path.push({ type: type, id: id });
+      };
+
+      const log = (msg) => {
+        console.log(`[Custom Algo]: ${msg}`);
+      };
+
+      const getNeighbors = (nodeId) => {
+        const adj = getAdjacencyList();
+        return adj[nodeId] || [];
+      };
+
+      // Helper context for the user code
+      // We pass copies of nodes and edges to prevent direct mutation of state
+      // but essentially they can read the graph structure.
+      const safeNodes = JSON.parse(JSON.stringify(nodes));
+      const safeEdges = JSON.parse(JSON.stringify(edges));
+
+      // Construct a function from user code
+      // We wrap it to provide scope
+      const userFunction = new Function(
+        'nodes', 'edges', 'startNodeId', 'visit', 'getNeighbors', 'log',
+        customCode
+      );
+
+      userFunction(safeNodes, safeEdges, traversalStartNode, visit, getNeighbors, log);
+
+      if (path.length > 0) {
+        startAnimation(path);
+        setShowCodeEditor(false);
+      } else {
+        alert("순회 경로가 생성되지 않았습니다. 코드를 확인해주세요.");
+      }
+
+    } catch (err) {
+      console.error(err);
+      alert(`코드 실행 중 오류가 발생했습니다:\n${err.message}`);
+    }
   };
 
   const startAnimation = (path) => {
@@ -494,6 +583,13 @@ const App = () => {
                 </button>
               </div>
               <button
+                onClick={() => setShowCodeEditor(true)}
+                disabled={isTraversing}
+                className="w-full py-2 bg-slate-50 border border-slate-200 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-100 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+              >
+                <Code size={14} /> 사용자 정의 알고리즘
+              </button>
+              <button
                 onClick={resetTraversal}
                 disabled={!isTraversing && visitedNodes.size === 0}
                 className="w-full py-2 bg-slate-100 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-200 disabled:opacity-50 transition-colors flex items-center justify-center gap-1"
@@ -526,6 +622,7 @@ const App = () => {
               })}
             </div>
           </section>
+
         </div>
 
         <div className="p-6 border-t border-slate-100 bg-slate-50">
@@ -544,61 +641,114 @@ const App = () => {
           Canvas View
         </div>
 
-        {/* Crop Overlay */}
-        {isCropMode && (
-          <div className="absolute inset-0 z-30 bg-black/40 overflow-hidden">
-            <div
-              style={{
-                position: 'absolute',
-                left: cropRect.x,
-                top: cropRect.y,
-                width: cropRect.width,
-                height: cropRect.height,
-                boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.5)'
-              }}
-              className="border-2 border-indigo-500 cursor-move group"
-              onMouseDown={(e) => handleCropMouseDown(e)}
-            >
-              {/* Resize Handles */}
-              {/* NW */}
-              <div
-                className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border border-indigo-500 cursor-nw-resize"
-                onMouseDown={(e) => handleCropMouseDown(e, 'nw')}
-              />
-              {/* NE */}
-              <div
-                className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border border-indigo-500 cursor-ne-resize"
-                onMouseDown={(e) => handleCropMouseDown(e, 'ne')}
-              />
-              {/* SW */}
-              <div
-                className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border border-indigo-500 cursor-sw-resize"
-                onMouseDown={(e) => handleCropMouseDown(e, 'sw')}
-              />
-              {/* SE */}
-              <div
-                className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border border-indigo-500 cursor-se-resize"
-                onMouseDown={(e) => handleCropMouseDown(e, 'se')}
-              />
+        {/* Code Editor Modal */}
+        {showCodeEditor && (
+          <div className="absolute inset-0 z-40 bg-black/50 backdrop-blur-sm flex items-center justify-center p-8">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-full max-h-[80vh] flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in duration-200">
+              <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
+                <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                  <Code size={20} className="text-indigo-600" /> 커스텀 알고리즘 편집기
+                </h3>
+                <button onClick={() => setShowCodeEditor(false)} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-full transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
 
-              {/* Action Buttons */}
-              <div className="absolute -top-12 left-0 flex gap-2">
-                <button
-                  onClick={(e) => { e.stopPropagation(); confirmSavePNG(); }}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white rounded-md shadow-lg text-xs font-bold hover:bg-indigo-700 transition-colors pointer-events-auto"
-                >
-                  <Check size={14} /> 저장
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); cancelCrop(); }}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-white text-slate-700 border border-slate-200 rounded-md shadow-lg text-xs font-bold hover:bg-slate-50 transition-colors pointer-events-auto"
-                >
-                  <X size={14} /> 취소
-                </button>
+              <div className="flex-1 p-0 flex flex-col relative">
+                <textarea
+                  value={customCode}
+                  onChange={(e) => setCustomCode(e.target.value)}
+                  className="flex-1 w-full bg-[#1e1e1e] text-[#d4d4d4] font-mono text-sm p-6 outline-none resize-none leading-relaxed"
+                  spellCheck="false"
+                />
+                <div className="absolute top-4 right-6 text-xs text-slate-500 bg-white/10 backdrop-blur-md p-2 rounded pointer-events-none">
+                  JavaScript Environment
+                </div>
+              </div>
+
+              <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+                <div className="text-xs text-slate-500 space-x-4">
+                  <span>Start Node ID: <strong>{traversalStartNode || 'None selected'}</strong></span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setShowCodeEditor(false)}
+                    className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    닫기
+                  </button>
+                  <button
+                    onClick={runCustomAlgorithm}
+                    disabled={!traversalStartNode}
+                    className="px-6 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 disabled:opacity-50 disabled:shadow-none transition-all active:scale-95 flex items-center gap-2"
+                  >
+                    <Play size={16} /> 실행하기
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         )}
+
+        {/* Crop Overlay */}
+        {
+          isCropMode && (
+            <div className="absolute inset-0 z-30 bg-black/40 overflow-hidden">
+              <div
+                style={{
+                  position: 'absolute',
+                  left: cropRect.x,
+                  top: cropRect.y,
+                  width: cropRect.width,
+                  height: cropRect.height,
+                  boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.5)'
+                }}
+                className="border-2 border-indigo-500 cursor-move group"
+                onMouseDown={(e) => handleCropMouseDown(e)}
+              >
+                {/* Resize Handles */}
+                {/* NW */}
+                <div
+                  className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border border-indigo-500 cursor-nw-resize"
+                  onMouseDown={(e) => handleCropMouseDown(e, 'nw')}
+                />
+                {/* NE */}
+                <div
+                  className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border border-indigo-500 cursor-ne-resize"
+                  onMouseDown={(e) => handleCropMouseDown(e, 'ne')}
+                />
+                {/* SW */}
+                <div
+                  className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border border-indigo-500 cursor-sw-resize"
+                  onMouseDown={(e) => handleCropMouseDown(e, 'sw')}
+                />
+                {/* SE */}
+                <div
+                  className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border border-indigo-500 cursor-se-resize"
+                  onMouseDown={(e) => handleCropMouseDown(e, 'se')}
+                />
+
+                {/* Action Buttons */}
+                <div className="absolute -top-12 left-0 flex gap-2">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); confirmSavePNG(); }}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white rounded-md shadow-lg text-xs font-bold hover:bg-indigo-700 transition-colors pointer-events-auto"
+                  >
+                    <Check size={14} /> 저장
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); cancelCrop(); }}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-white text-slate-700 border border-slate-200 rounded-md shadow-lg text-xs font-bold hover:bg-slate-50 transition-colors pointer-events-auto"
+                  >
+                    <X size={14} /> 취소
+                  </button>
+                </div>
+              </div>
+            </div>
+          )
+        }
+
+
 
         <svg className="w-full h-full cursor-crosshair" ref={svgRef} xmlns="http://www.w3.org/2000/svg">
           <defs>
@@ -669,8 +819,8 @@ const App = () => {
             );
           })}
         </svg>
-      </main>
-    </div>
+      </main >
+    </div >
   );
 };
 
