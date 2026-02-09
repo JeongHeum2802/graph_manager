@@ -1,10 +1,25 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Plus, Trash2, Share2, Circle, MousePointer2, ArrowRight, Minus, Download, Crop, X, Check } from 'lucide-react';
+import { Plus, Trash2, Share2, Circle, MousePointer2, ArrowRight, Minus, Download, Crop, X, Check, Play, RotateCcw } from 'lucide-react';
 
 const App = () => {
   // State for Graph Data
-  const [nodes, setNodes] = useState([]);
-  const [edges, setEdges] = useState([]);
+  const [nodes, setNodes] = useState([
+    { id: '1', label: 'A', x: 400, y: 100 },
+    { id: '2', label: 'B', x: 250, y: 250 },
+    { id: '3', label: 'C', x: 550, y: 250 },
+    { id: '4', label: 'D', x: 150, y: 400 },
+    { id: '5', label: 'E', x: 350, y: 400 },
+    { id: '6', label: 'F', x: 450, y: 400 },
+    { id: '7', label: 'G', x: 650, y: 400 },
+  ]);
+  const [edges, setEdges] = useState([
+    { id: 'e1', source: '1', target: '2', type: 'directed', weight: null },
+    { id: 'e2', source: '1', target: '3', type: 'directed', weight: null },
+    { id: 'e3', source: '2', target: '4', type: 'directed', weight: null },
+    { id: 'e4', source: '2', target: '5', type: 'directed', weight: null },
+    { id: 'e5', source: '3', target: '6', type: 'directed', weight: null },
+    { id: 'e6', source: '3', target: '7', type: 'directed', weight: null },
+  ]);
 
   // Sidebar Inputs
   const [newNodeLabel, setNewNodeLabel] = useState('');
@@ -22,6 +37,14 @@ const App = () => {
   const [isDraggingCrop, setIsDraggingCrop] = useState(false);
   const dragStartRef = useRef({ x: 0, y: 0 });
   const initialCropRectRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
+
+  // Traversal State
+  const [traversalStartNode, setTraversalStartNode] = useState('');
+  const [isTraversing, setIsTraversing] = useState(false);
+  const [traversalPath, setTraversalPath] = useState([]); // Array of { type: 'node' | 'edge', id: string }
+  const [currentStep, setCurrentStep] = useState(-1);
+  const [visitedNodes, setVisitedNodes] = useState(new Set());
+  const [visitedEdges, setVisitedEdges] = useState(new Set());
 
   // Dragging State
   const [draggingNodeId, setDraggingNodeId] = useState(null);
@@ -145,6 +168,101 @@ const App = () => {
     setCropRect(box);
     setIsCropMode(true);
   };
+
+  // Traversal Algorithms
+  const getAdjacencyList = () => {
+    const adj = {};
+    nodes.forEach(n => adj[n.id] = []);
+    edges.forEach(e => {
+      adj[e.source].push({ node: e.target, edgeId: e.id });
+      if (e.type === 'undirected') {
+        adj[e.target].push({ node: e.source, edgeId: e.id });
+      }
+    });
+    // Sort neighbors by ID or label to ensure deterministic order (optional)
+    Object.keys(adj).forEach(key => {
+      adj[key].sort((a, b) => a.node.localeCompare(b.node));
+    });
+    return adj;
+  };
+
+  const runBFS = () => {
+    if (!traversalStartNode) return;
+    const adj = getAdjacencyList();
+    const queue = [traversalStartNode];
+    const visited = new Set([traversalStartNode]);
+    const path = [{ type: 'node', id: traversalStartNode }];
+
+    while (queue.length > 0) {
+      const curr = queue.shift();
+      const neighbors = adj[curr] || [];
+
+      for (const { node, edgeId } of neighbors) {
+        if (!visited.has(node)) {
+          visited.add(node);
+          path.push({ type: 'edge', id: edgeId });
+          path.push({ type: 'node', id: node });
+          queue.push(node);
+        }
+      }
+    }
+    startAnimation(path);
+  };
+
+  const runDFS = () => {
+    if (!traversalStartNode) return;
+    const adj = getAdjacencyList();
+    const visited = new Set();
+    const path = [];
+
+    const dfs = (nodeId) => {
+      visited.add(nodeId);
+      path.push({ type: 'node', id: nodeId });
+
+      const neighbors = adj[nodeId] || [];
+      for (const { node, edgeId } of neighbors) {
+        if (!visited.has(node)) {
+          path.push({ type: 'edge', id: edgeId });
+          dfs(node);
+        }
+      }
+    };
+
+    dfs(traversalStartNode);
+    startAnimation(path);
+  };
+
+  const startAnimation = (path) => {
+    setTraversalPath(path);
+    setCurrentStep(0);
+    setIsTraversing(true);
+    setVisitedNodes(new Set());
+    setVisitedEdges(new Set());
+  };
+
+  const resetTraversal = () => {
+    setIsTraversing(false);
+    setCurrentStep(-1);
+    setVisitedNodes(new Set());
+    setVisitedEdges(new Set());
+    setTraversalPath([]);
+  };
+
+  useEffect(() => {
+    if (!isTraversing || currentStep < 0 || currentStep >= traversalPath.length) return;
+
+    const timer = setTimeout(() => {
+      const step = traversalPath[currentStep];
+      if (step.type === 'node') {
+        setVisitedNodes(prev => new Set(prev).add(step.id));
+      } else {
+        setVisitedEdges(prev => new Set(prev).add(step.id));
+      }
+      setCurrentStep(prev => prev + 1);
+    }, 700); // 700ms delay per step
+
+    return () => clearTimeout(timer);
+  }, [isTraversing, currentStep, traversalPath]);
 
   const cancelCrop = () => {
     setIsCropMode(false);
@@ -346,6 +464,48 @@ const App = () => {
           </section>
 
           <section>
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-4 flex items-center gap-2">
+              <Play size={14} /> 알고리즘 실행
+            </h2>
+            <div className="space-y-2">
+              <select
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none bg-white"
+                value={traversalStartNode}
+                onChange={(e) => setTraversalStartNode(e.target.value)}
+                disabled={isTraversing}
+              >
+                <option value="">시작 노드 선택</option>
+                {nodes.map((n) => <option key={n.id} value={n.id}>{n.label}</option>)}
+              </select>
+              <div className="flex gap-2">
+                <button
+                  onClick={runDFS}
+                  disabled={!traversalStartNode || isTraversing}
+                  className="flex-1 py-2 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-lg text-sm font-semibold hover:bg-indigo-100 disabled:opacity-50 transition-colors"
+                >
+                  DFS 실행
+                </button>
+                <button
+                  onClick={runBFS}
+                  disabled={!traversalStartNode || isTraversing}
+                  className="flex-1 py-2 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg text-sm font-semibold hover:bg-emerald-100 disabled:opacity-50 transition-colors"
+                >
+                  BFS 실행
+                </button>
+              </div>
+              <button
+                onClick={resetTraversal}
+                disabled={!isTraversing && visitedNodes.size === 0}
+                className="w-full py-2 bg-slate-100 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-200 disabled:opacity-50 transition-colors flex items-center justify-center gap-1"
+              >
+                <RotateCcw size={14} /> 초기화
+              </button>
+            </div>
+          </section>
+
+
+
+          <section>
             <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-4">현재 간선 목록</h2>
             <div className="max-h-40 overflow-y-auto space-y-2">
               {edges.length === 0 && <p className="text-xs text-slate-400 italic">연결된 간선이 없습니다.</p>}
@@ -455,15 +615,17 @@ const App = () => {
 
             const midX = (sourceNode.x + targetNode.x) / 2;
             const midY = (sourceNode.y + targetNode.y) / 2;
+            const isVisited = visitedEdges.has(edge.id);
 
             return (
               <g key={edge.id}>
                 <line
                   x1={sourceNode.x} y1={sourceNode.y}
                   x2={targetNode.x} y2={targetNode.y}
-                  stroke={edge.type === 'directed' ? "#6366f1" : "#94a3b8"}
-                  strokeWidth="2"
+                  stroke={isVisited ? "#f59e0b" : (edge.type === 'directed' ? "#6366f1" : "#94a3b8")}
+                  strokeWidth={isVisited ? "4" : "2"}
                   markerEnd={edge.type === 'directed' ? "url(#arrowhead)" : ""}
+                  className="transition-all duration-500"
                 />
                 {edge.weight != null && (
                   <>
@@ -484,19 +646,28 @@ const App = () => {
           })}
 
           {/* Nodes */}
-          {nodes.map((node) => (
-            <g key={node.id} transform={`translate(${node.x}, ${node.y})`} onMouseDown={handleMouseDown(node.id)} className="cursor-grab active:cursor-grabbing group">
-              <circle r="22" fill="white" stroke={draggingNodeId === node.id ? "#4f46e5" : "#e2e8f0"} strokeWidth="3" />
-              <text textAnchor="middle" dy=".3em" style={{ fontSize: '10px', fontWeight: 'bold', fill: '#334155', pointerEvents: 'none', userSelect: 'none' }}>
-                {node.label}
-              </text>
-              <foreignObject x="15" y="-30" width="20" height="20" className="opacity-0 group-hover:opacity-100 transition-opacity">
-                <button onClick={(e) => { e.stopPropagation(); deleteNode(node.id); }} className="bg-rose-500 text-white rounded-full p-1 hover:bg-rose-600 shadow-sm">
-                  <Trash2 size={10} />
-                </button>
-              </foreignObject>
-            </g>
-          ))}
+          {nodes.map((node) => {
+            const isVisited = visitedNodes.has(node.id);
+            return (
+              <g key={node.id} transform={`translate(${node.x}, ${node.y})`} onMouseDown={handleMouseDown(node.id)} className="cursor-grab active:cursor-grabbing group">
+                <circle
+                  r="22"
+                  fill={isVisited ? "#10b981" : "white"}
+                  stroke={isVisited ? "#05c655" : (draggingNodeId === node.id ? "#4f46e5" : "#e2e8f0")}
+                  strokeWidth="3"
+                  className="transition-all duration-500 ease-out"
+                />
+                <text textAnchor="middle" dy=".3em" style={{ fontSize: '10px', fontWeight: 'bold', fill: isVisited ? '#ffffff' : '#334155', pointerEvents: 'none', userSelect: 'none' }}>
+                  {node.label}
+                </text>
+                <foreignObject x="15" y="-30" width="20" height="20" className="opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button onClick={(e) => { e.stopPropagation(); deleteNode(node.id); }} className="bg-rose-500 text-white rounded-full p-1 hover:bg-rose-600 shadow-sm">
+                    <Trash2 size={10} />
+                  </button>
+                </foreignObject>
+              </g>
+            );
+          })}
         </svg>
       </main>
     </div>
